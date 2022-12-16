@@ -7,10 +7,10 @@ this patch is focused around the sensors used for ai
 delete the line of sight cache less often and use a faster nearby comparison
 
 diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
-index f23829690d2be20af50256e4d985e3e342415d54..995fc228430ac6c8af8654aa1137c7f66668f622 100644
+index 3fd8e115319e24d31f0b81e88633b83969a41b4b..79e6fb53ad37194ef96d409d503c2df1fb4884de 100644
 --- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
 +++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
-@@ -1026,20 +1026,22 @@ public abstract class LivingEntity extends Entity {
+@@ -1026,23 +1026,25 @@ public abstract class LivingEntity extends Entity {
          }
  
          if (entity != null) {
@@ -32,16 +32,19 @@ index f23829690d2be20af50256e4d985e3e342415d54..995fc228430ac6c8af8654aa1137c7f6
 +            else if (entitytypes == EntityType.CREEPER && this.getItemBySlot(EquipmentSlot.HEAD).is(Items.CREEPER_HEAD)) {
                  d0 *= entity.level.purpurConfig.creeperHeadVisibilityPercent;
              }
+             else if ((entitytypes == EntityType.PIGLIN || entitytypes == EntityType.PIGLIN_BRUTE) && itemstack.is(Items.PIGLIN_HEAD)) {
+                 d0 *= entity.level.purpurConfig.piglinHeadVisibilityPercent;
+             }
              // Purpur end
 +            // petal end
  
              // Purpur start
              if (entity instanceof LivingEntity entityliving) {
 diff --git a/src/main/java/net/minecraft/world/entity/Mob.java b/src/main/java/net/minecraft/world/entity/Mob.java
-index bc18c166ca776b0ef6e816eb034e410c391258b6..e68533ff29c882e955c150130e3260584cc250b0 100644
+index 7bd4e95fcaf3855a4fe412b5898a97d7992caad3..f6891970aebfe0095e37cca532fd6b971f5d1ee7 100644
 --- a/src/main/java/net/minecraft/world/entity/Mob.java
 +++ b/src/main/java/net/minecraft/world/entity/Mob.java
-@@ -884,10 +884,10 @@ public abstract class Mob extends LivingEntity {
+@@ -902,10 +902,10 @@ public abstract class Mob extends LivingEntity {
              return;
          }
          // Paper end

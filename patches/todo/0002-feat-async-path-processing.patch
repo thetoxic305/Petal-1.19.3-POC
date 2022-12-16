@@ -1,0 +1,531 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: peaches94 <peachescu94@gmail.com>
+Date: Sun, 26 Jun 2022 16:51:37 -0500
+Subject: [PATCH] feat: async path processing
+
+
+diff --git a/src/main/java/host/bloom/pathfinding/AsyncPath.java b/src/main/java/host/bloom/pathfinding/AsyncPath.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..db264161dfa5ef288f6d79a0031b56f95f17dd9d
+--- /dev/null
++++ b/src/main/java/host/bloom/pathfinding/AsyncPath.java
+@@ -0,0 +1,288 @@
++package host.bloom.pathfinding;
++
++import net.minecraft.core.BlockPos;
++import net.minecraft.world.entity.Entity;
++import net.minecraft.world.level.pathfinder.Node;
++import net.minecraft.world.level.pathfinder.Path;
++import net.minecraft.world.phys.Vec3;
++import org.jetbrains.annotations.NotNull;
++import org.jetbrains.annotations.Nullable;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Set;
++import java.util.function.Supplier;
++
++/**
++ * i'll be using this to represent a path that not be processed yet!
++ */
++public class AsyncPath extends Path {
++
++    /**
++     * marks whether this async path has been processed
++     */
++    private volatile boolean processed = false;
++
++    /**
++     * runnables waiting for this to be processed
++     */
++    private final List<Runnable> postProcessing = new ArrayList<>(0);
++
++    /**
++     * a list of positions that this path could path towards
++     */
++    private final Set<BlockPos> positions;
++
++    /**
++     * the supplier of the real processed path
++     */
++    private final Supplier<Path> pathSupplier;
++
++    /*
++     * Processed values
++     */
++
++    /**
++     * this is a reference to the nodes list in the parent `Path` object
++     */
++    private final List<Node> nodes;
++    /**
++     * the block we're trying to path to
++     *
++     * while processing, we have no idea where this is so consumers of `Path` should check that the path is processed before checking the target block
++     */
++    private @Nullable BlockPos target;
++    /**
++     * how far we are to the target
++     *
++     * while processing, the target could be anywhere but theoretically we're always "close" to a theoretical target so default is 0
++     */
++    private float distToTarget = 0;
++    /**
++     * whether we can reach the target
++     *
++     * while processing we can always theoretically reach the target so default is true
++     */
++    private boolean canReach = true;
++
++    public AsyncPath(@NotNull List<Node> emptyNodeList, @NotNull Set<BlockPos> positions, @NotNull Supplier<Path> pathSupplier) {
++        //noinspection ConstantConditions
++        super(emptyNodeList, null, false);
++
++        this.nodes = emptyNodeList;
++        this.positions = positions;
++        this.pathSupplier = pathSupplier;
++
++        AsyncPathProcessor.queue(this);
++    }
++
++    @Override
++    public boolean isProcessed() {
++        return this.processed;
++    }
++
++    /**
++     * returns the future representing the processing state of this path
++     * @return a future
++     */
++    public synchronized void postProcessing(@NotNull Runnable runnable) {
++        if (this.processed) {
++            runnable.run();
++        } else {
++            this.postProcessing.add(runnable);
++        }
++    }
++
++    /**
++     * an easy way to check if this processing path is the same as an attempted new path
++     *
++     * @param positions - the positions to compare against
++     * @return true if we are processing the same positions
++     */
++    public boolean hasSameProcessingPositions(final Set<BlockPos> positions) {
++        if (this.positions.size() != positions.size()) {
++            return false;
++        }
++
++        return this.positions.containsAll(positions);
++    }
++
++    /**
++     * starts processing this path
++     */
++    public synchronized void process() {
++        if (this.processed) {
++            return;
++        }
++
++        final Path bestPath = this.pathSupplier.get();
++
++        this.nodes.addAll(bestPath.nodes); // we mutate this list to reuse the logic in Path
++        this.target = bestPath.getTarget();
++        this.distToTarget = bestPath.getDistToTarget();
++        this.canReach = bestPath.canReach();
++
++        this.processed = true;
++
++        for (Runnable runnable : this.postProcessing) {
++            runnable.run();
++        }
++    }
++
++    /**
++     * if this path is accessed while it hasn't processed, just process it in-place
++     */
++    private void checkProcessed() {
++        if (!this.processed) {
++            this.process();
++        }
++    }
++
++    /*
++     * overrides we need for final fields that we cannot modify after processing
++     */
++
++    @Override
++    public @NotNull BlockPos getTarget() {
++        this.checkProcessed();
++
++        return this.target;
++    }
++
++    @Override
++    public float getDistToTarget() {
++        this.checkProcessed();
++
++        return this.distToTarget;
++    }
++
++    @Override
++    public boolean canReach() {
++        this.checkProcessed();
++
++        return this.canReach;
++    }
++
++    /*
++     * overrides to ensure we're processed first
++     */
++
++    @Override
++    public boolean isDone() {
++        return this.isProcessed() && super.isDone();
++    }
++
++    @Override
++    public void advance() {
++        this.checkProcessed();
++
++        super.advance();
++    }
++
++    @Override
++    public boolean notStarted() {
++        this.checkProcessed();
++
++        return super.notStarted();
++    }
++
++    @Nullable
++    @Override
++    public Node getEndNode() {
++        this.checkProcessed();
++
++        return super.getEndNode();
++    }
++
++    @Override
++    public Node getNode(int index) {
++        this.checkProcessed();
++
++        return super.getNode(index);
++    }
++
++    @Override
++    public void truncateNodes(int length) {
++        this.checkProcessed();
++
++        super.truncateNodes(length);
++    }
++
++    @Override
++    public void replaceNode(int index, Node node) {
++        this.checkProcessed();
++
++        super.replaceNode(index, node);
++    }
++
++    @Override
++    public int getNodeCount() {
++        this.checkProcessed();
++
++        return super.getNodeCount();
++    }
++
++    @Override
++    public int getNextNodeIndex() {
++        this.checkProcessed();
++
++        return super.getNextNodeIndex();
++    }
++
++    @Override
++    public void setNextNodeIndex(int nodeIndex) {
++        this.checkProcessed();
++
++        super.setNextNodeIndex(nodeIndex);
++    }
++
++    @Override
++    public Vec3 getEntityPosAtNode(Entity entity, int index) {
++        this.checkProcessed();
++
++        return super.getEntityPosAtNode(entity, index);
++    }
++
++    @Override
++    public BlockPos getNodePos(int index) {
++        this.checkProcessed();
++
++        return super.getNodePos(index);
++    }
++
++    @Override
++    public Vec3 getNextEntityPos(Entity entity) {
++        this.checkProcessed();
++
++        return super.getNextEntityPos(entity);
++    }
++
++    @Override
++    public BlockPos getNextNodePos() {
++        this.checkProcessed();
++
++        return super.getNextNodePos();
++    }
++
++    @Override
++    public Node getNextNode() {
++        this.checkProcessed();
++
++        return super.getNextNode();
++    }
++
++    @Nullable
++    @Override
++    public Node getPreviousNode() {
++        this.checkProcessed();
++
++        return super.getPreviousNode();
++    }
++
++    @Override
++    public boolean hasNext() {
++        this.checkProcessed();
++
++        return super.hasNext();
++    }
++}
+diff --git a/src/main/java/host/bloom/pathfinding/AsyncPathProcessor.java b/src/main/java/host/bloom/pathfinding/AsyncPathProcessor.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..421670f967568c10e1e9052d0fc25818538d3b51
+--- /dev/null
++++ b/src/main/java/host/bloom/pathfinding/AsyncPathProcessor.java
+@@ -0,0 +1,44 @@
++package host.bloom.pathfinding;
++
++import com.google.common.util.concurrent.ThreadFactoryBuilder;
++import net.minecraft.server.MinecraftServer;
++import net.minecraft.world.level.pathfinder.Path;
++import org.jetbrains.annotations.NotNull;
++import org.jetbrains.annotations.Nullable;
++
++import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.Executor;
++import java.util.concurrent.Executors;
++import java.util.function.Consumer;
++
++/**
++ * used to handle the scheduling of async path processing
++ */
++public class AsyncPathProcessor {
++
++    private static final Executor mainThreadExecutor = MinecraftServer.getServer();
++    private static final Executor pathProcessingExecutor = Executors.newCachedThreadPool(new ThreadFactoryBuilder()
++            .setNameFormat("petal-path-processor-%d")
++            .setPriority(Thread.NORM_PRIORITY - 2)
++            .build());
++
++    protected static CompletableFuture<Void> queue(@NotNull AsyncPath path) {
++        return CompletableFuture.runAsync(path::process, pathProcessingExecutor);
++    }
++
++    /**
++     * takes a possibly unprocessed path, and waits until it is completed
++     * the consumer will be immediately invoked if the path is already processed
++     * the consumer will always be called on the main thread
++     *
++     * @param path a path to wait on
++     * @param afterProcessing a consumer to be called
++     */
++    public static void awaitProcessing(@Nullable Path path, Consumer<@Nullable Path> afterProcessing) {
++        if (path != null && !path.isProcessed() && path instanceof AsyncPath asyncPath) {
++            asyncPath.postProcessing(() -> mainThreadExecutor.execute(() -> afterProcessing.accept(path)));
++        } else {
++            afterProcessing.accept(path);
++        }
++    }
++}
+diff --git a/src/main/java/host/bloom/pathfinding/NodeEvaluatorCache.java b/src/main/java/host/bloom/pathfinding/NodeEvaluatorCache.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..d70c82e4b117ee3bf9df6ba322e4ae9fc99d1124
+--- /dev/null
++++ b/src/main/java/host/bloom/pathfinding/NodeEvaluatorCache.java
+@@ -0,0 +1,39 @@
++package host.bloom.pathfinding;
++
++import net.minecraft.world.level.pathfinder.NodeEvaluator;
++import org.apache.commons.lang.Validate;
++import org.jetbrains.annotations.NotNull;
++
++import java.util.Map;
++import java.util.Queue;
++import java.util.concurrent.ConcurrentHashMap;
++import java.util.concurrent.ConcurrentLinkedQueue;
++
++public class NodeEvaluatorCache {
++    private static final Map<NodeEvaluatorGenerator, ConcurrentLinkedQueue<NodeEvaluator>> threadLocalNodeEvaluators = new ConcurrentHashMap<>();
++    private static final Map<NodeEvaluator, NodeEvaluatorGenerator> nodeEvaluatorToGenerator = new ConcurrentHashMap<>();
++
++    private static @NotNull Queue<NodeEvaluator> getDequeForGenerator(@NotNull NodeEvaluatorGenerator generator) {
++        return threadLocalNodeEvaluators.computeIfAbsent(generator, (key) -> new ConcurrentLinkedQueue<>());
++    }
++
++    public static @NotNull NodeEvaluator takeNodeEvaluator(@NotNull NodeEvaluatorGenerator generator) {
++        var nodeEvaluator = getDequeForGenerator(generator).poll();
++
++        if (nodeEvaluator == null) {
++            nodeEvaluator = generator.generate();
++        }
++
++        nodeEvaluatorToGenerator.put(nodeEvaluator, generator);
++
++        return nodeEvaluator;
++    }
++
++    public static void returnNodeEvaluator(@NotNull NodeEvaluator nodeEvaluator) {
++        final var generator = nodeEvaluatorToGenerator.remove(nodeEvaluator);
++        Validate.notNull(generator, "NodeEvaluator already returned");
++
++        getDequeForGenerator(generator).offer(nodeEvaluator);
++    }
++
++}
+diff --git a/src/main/java/host/bloom/pathfinding/NodeEvaluatorGenerator.java b/src/main/java/host/bloom/pathfinding/NodeEvaluatorGenerator.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..d5327cb257d63291adc8b5c60cffb4e47e1e5b0e
+--- /dev/null
++++ b/src/main/java/host/bloom/pathfinding/NodeEvaluatorGenerator.java
+@@ -0,0 +1,10 @@
++package host.bloom.pathfinding;
++
++import net.minecraft.world.level.pathfinder.NodeEvaluator;
++import org.jetbrains.annotations.NotNull;
++
++public interface NodeEvaluatorGenerator {
++
++    @NotNull NodeEvaluator generate();
++
++}
+diff --git a/src/main/java/net/minecraft/world/entity/ai/behavior/AcquirePoi.java b/src/main/java/net/minecraft/world/entity/ai/behavior/AcquirePoi.java
+index fe502445a77afe7e3807afae48d7bf03f370e290..41eb252792e454a1a036337c7a899bab7c218f1b 100644
+--- a/src/main/java/net/minecraft/world/entity/ai/behavior/AcquirePoi.java
++++ b/src/main/java/net/minecraft/world/entity/ai/behavior/AcquirePoi.java
+@@ -68,8 +68,20 @@ public class AcquirePoi {
+                         io.papermc.paper.util.PoiAccess.findNearestPoiPositions(poiManager, poiPredicate, predicate2, entity.blockPosition(), 48, 48*48, PoiManager.Occupancy.HAS_SPACE, false, 5, poiposes);
+                         Set<Pair<Holder<PoiType>, BlockPos>> set = new java.util.HashSet<>(poiposes);
+                         // Paper end - optimise POI access
+-                        Path path = findPathToPois(entity, set);
+-                        if (path != null && path.canReach()) {
++                        // petal start - await on path async
++                        Path possiblePath = findPathToPois(entity, set);
++
++                        // petal - wait on the path to be processed
++                        host.bloom.pathfinding.AsyncPathProcessor.awaitProcessing(possiblePath, path -> {
++                            // petal - readd canReach check
++                            if (path == null || !path.canReach()) {
++                                for(Pair<Holder<PoiType>, BlockPos> pair : set) {
++                                    this.batchCache.computeIfAbsent(pair.getSecond().asLong(), (m) -> {
++                                        return new AcquirePoi.JitteredLinearRetry(entity.level.random, time);
++                                    });
++                                }
++                                return;
++                            }
+                             BlockPos blockPos = path.getTarget();
+                             poiManager.getType(blockPos).ifPresent((poiType) -> {
+                                 poiManager.take(poiPredicate, (holder, blockPos2) -> {
+@@ -82,13 +94,8 @@ public class AcquirePoi {
+                                 long2ObjectMap.clear();
+                                 DebugPackets.sendPoiTicketCountPacket(world, blockPos);
+                             });
+-                        } else {
+-                            for(Pair<Holder<PoiType>, BlockPos> pair : set) {
+-                                long2ObjectMap.computeIfAbsent(pair.getSecond().asLong(), (m) -> {
+-                                    return new AcquirePoi.JitteredLinearRetry(world.random, time);
+-                                });
+-                            }
+-                        }
++                        });
++                        // petal end
+ 
+                         return true;
+                     }
+diff --git a/src/main/java/net/minecraft/world/entity/ai/navigation/PathNavigation.java b/src/main/java/net/minecraft/world/entity/ai/navigation/PathNavigation.java
+index 2f2d9bb31194618ef5bba39cd1cbe7c4919e82c5..487011bc4576a7b1d278b079fe6162b1f2476adf 100644
+--- a/src/main/java/net/minecraft/world/entity/ai/navigation/PathNavigation.java
++++ b/src/main/java/net/minecraft/world/entity/ai/navigation/PathNavigation.java
+@@ -151,6 +151,9 @@ public abstract class PathNavigation {
+             return null;
+         } else if (!this.canUpdatePath()) {
+             return null;
++        } else if (this.path instanceof host.bloom.pathfinding.AsyncPath asyncPath && !asyncPath.isProcessed() && asyncPath.hasSameProcessingPositions(positions)) { // petal start - catch early if it's still processing these positions let it keep processing
++            return this.path;
++            // petal end
+         } else if (this.path != null && !this.path.isDone() && positions.contains(this.targetPos)) {
+             return this.path;
+         } else {
+@@ -177,11 +180,20 @@ public abstract class PathNavigation {
+             PathNavigationRegion pathNavigationRegion = new PathNavigationRegion(this.level, blockPos.offset(-i, -i, -i), blockPos.offset(i, i, i));
+             Path path = this.pathFinder.findPath(pathNavigationRegion, this.mob, positions, followRange, distance, this.maxVisitedNodesMultiplier);
+             //this.level.getProfiler().pop(); // Purpur
+-            if (path != null && path.getTarget() != null) {
+-                this.targetPos = path.getTarget();
+-                this.reachRange = distance;
+-                this.resetStuckTimeout();
+-            }
++
++            if (!positions.isEmpty()) this.targetPos = positions.iterator().next(); // petal - assign early a target position. most calls will only have 1 position
++
++            // petal start - async
++            host.bloom.pathfinding.AsyncPathProcessor.awaitProcessing(path, processedPath -> {
++                if (processedPath != this.path) return; // petal - check that processing didn't take so long that we calculated a new path
++
++                if (processedPath != null && processedPath.getTarget() != null) {
++                    this.targetPos = processedPath.getTarget();
++                    this.reachRange = distance;
++                    this.resetStuckTimeout();
++                }
++            });
++            // petal end
+ 
+             return path;
+         }
+@@ -228,8 +240,8 @@ public abstract class PathNavigation {
+             if (this.isDone()) {
+                 return false;
+             } else {
+-                this.trimPath();
+-                if (this.path.getNodeCount() <= 0) {
++                if (path.isProcessed()) this.trimPath(); // petal - only trim if processed
++                if (path.isProcessed() && this.path.getNodeCount() <= 0) { // petal - only check node count if processed
+                     return false;
+                 } else {
+                     this.speedModifier = speed;
+@@ -253,6 +265,8 @@ public abstract class PathNavigation {
+             this.recomputePath();
+         }
+ 
++        if (this.path != null && !this.path.isProcessed()) return; // petal - skip pathfinding if we're still processing
++
+         if (!this.isDone()) {
+             if (this.canUpdatePath()) {
+                 this.followThePath();
+@@ -278,6 +292,7 @@ public abstract class PathNavigation {
+     }
+ 
+     protected void followThePath() {
++        if (!this.path.isProcessed()) return; // petal
+         Vec3 vec3 = this.getTempMobPos();
+         this.maxDistanceToWaypoint = this.mob.getBbWidth() > 0.75F ? this.mob.getBbWidth() / 2.0F : 0.75F - this.mob.getBbWidth() / 2.0F;
+         Vec3i vec3i = this.path.getNextNodePos();
+@@ -433,7 +448,7 @@ public abstract class PathNavigation {
+     public boolean shouldRecomputePath(BlockPos pos) {
+         if (this.hasDelayedRecomputation) {
+             return false;
+-        } else if (this.path != null && !this.path.isDone() && this.path.getNodeCount() != 0) {
++        } else if (this.path != null && this.path.isProcessed() && !this.path.isDone() && this.path.getNodeCount() != 0) { // petal
+             Node node = this.path.getEndNode();
+             Vec3 vec3 = new Vec3(((double)node.x + this.mob.getX()) / 2.0D, ((double)node.y + this.mob.getY()) / 2.0D, ((double)node.z + this.mob.getZ()) / 2.0D);
+             return pos.closerToCenterThan(vec3, (double)(this.path.getNodeCount() - this.path.getNextNodeIndex()));

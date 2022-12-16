@@ -299,7 +299,7 @@ index ca42c2642a729b90d22b968af7258f3aee72e14b..40261b80d947a6be43465013fae55321
      public boolean visible = true;
  
 diff --git a/src/main/java/net/minecraft/server/level/ServerEntity.java b/src/main/java/net/minecraft/server/level/ServerEntity.java
-index 0f9a3a6c05fee59c29764f0c0d7a6cb8a2a861b1..6cf41d2c8cb4ccbd3171b7a69f2bd0721e86b308 100644
+index 0f9a3a6c05fee59c29764f0c0d7a6cb8a2a861b1..9639bdadfdaf6614e316debdb2f32d216f4c044c 100644
 --- a/src/main/java/net/minecraft/server/level/ServerEntity.java
 +++ b/src/main/java/net/minecraft/server/level/ServerEntity.java
 @@ -254,14 +254,18 @@ public class ServerEntity {
@@ -323,14 +323,16 @@ index 0f9a3a6c05fee59c29764f0c0d7a6cb8a2a861b1..6cf41d2c8cb4ccbd3171b7a69f2bd072
          this.entity.startSeenByPlayer(player);
      }
  
-@@ -369,19 +373,28 @@ public class ServerEntity {
+@@ -369,19 +373,30 @@ public class ServerEntity {
  
          if (list != null) {
              this.trackedDataValues = datawatcher.getNonDefaultValues();
 -            this.broadcastAndSend(new ClientboundSetEntityDataPacket(this.entity.getId(), list));
++            // Petal start - sync
 +            ((ServerLevel) this.entity.level).chunkSource.chunkMap.runOnTrackerMainThread(() ->
 +                this.broadcastAndSend(new ClientboundSetEntityDataPacket(this.entity.getId(), list))
 +            );
++            // Petal end
          }
  
          if (this.entity instanceof LivingEntity) {

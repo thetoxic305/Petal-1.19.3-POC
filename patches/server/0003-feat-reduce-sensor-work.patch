@@ -7,7 +7,7 @@ this patch is focused around the sensors used for ai
 delete the line of sight cache less often and use a faster nearby comparison
 
 diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
-index 3fd8e115319e24d31f0b81e88633b83969a41b4b..79e6fb53ad37194ef96d409d503c2df1fb4884de 100644
+index 454cd09309f581b43a521fcb8fd184b7788c6a88..d8a9ab4ae83a9d958a2c1e0b844811b8d556ca38 100644
 --- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
 +++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
 @@ -1026,23 +1026,25 @@ public abstract class LivingEntity extends Entity {
@@ -32,7 +32,8 @@ index 3fd8e115319e24d31f0b81e88633b83969a41b4b..79e6fb53ad37194ef96d409d503c2df1
 +            else if (entitytypes == EntityType.CREEPER && this.getItemBySlot(EquipmentSlot.HEAD).is(Items.CREEPER_HEAD)) {
                  d0 *= entity.level.purpurConfig.creeperHeadVisibilityPercent;
              }
-             else if ((entitytypes == EntityType.PIGLIN || entitytypes == EntityType.PIGLIN_BRUTE) && itemstack.is(Items.PIGLIN_HEAD)) {
+-            else if ((entitytypes == EntityType.PIGLIN || entitytypes == EntityType.PIGLIN_BRUTE) && itemstack.is(Items.PIGLIN_HEAD)) {
++            else if ((entitytypes == EntityType.PIGLIN || entitytypes == EntityType.PIGLIN_BRUTE) && this.getItemBySlot(EquipmentSlot.HEAD).is(Items.PIGLIN_HEAD)) {
                  d0 *= entity.level.purpurConfig.piglinHeadVisibilityPercent;
              }
              // Purpur end
